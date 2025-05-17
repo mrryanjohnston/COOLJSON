@@ -52,7 +52,8 @@
 	?p <- (popped-char ?name 9|10|13|32)
 	(or
 		(element (name ?name) (value nil))
-		(obj (name ?name) (members $?members&:(= 0 (length$ ?members))|:(instancep (nth$ (length$ ?members) ?members)))))
+		(obj (name ?name) (members $?members&:(= 0 (length$ ?members))|:(instancep (nth$ (length$ ?members) ?members))))
+		(array (name ?name) (values $?values&:(= 0 (length$ ?values))|:(instancep (nth$ (length$ ?values) ?values)))))
 	=>
 	(retract ?p))
 
