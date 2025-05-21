@@ -1,0 +1,239 @@
+{
+  "company": {
+    "name": "TechCorp International",
+    "founded": 2005,
+    "ceo": {
+      "firstName": "Alice",
+      "lastName": "Wong",
+      "age": 52,
+      "tenureYears": 10
+    },
+    "offices": [
+      {
+        "id": "NYC",
+        "location": "New York, USA",
+        "address": {
+          "street": "123 5th Ave",
+          "city": "New York",
+          "state": "NY",
+          "zip": "10001"
+        },
+        "employees": 1200,
+        "departments": ["Engineering", "HR", "Sales", "Marketing"]
+      },
+      {
+        "id": "SFO",
+        "location": "San Francisco, USA",
+        "address": {
+          "street": "456 Market St",
+          "city": "San Francisco",
+          "state": "CA",
+          "zip": "94111"
+        },
+        "employees": 800,
+        "departments": ["Engineering", "Design", "Support"]
+      }
+    ],
+    "departments": [
+      {
+        "id": "ENG",
+        "name": "Engineering",
+        "manager": {
+          "id": 1001,
+          "name": "Carlos Ramirez"
+        },
+        "teams": [
+          {
+            "id": "ENG-1",
+            "name": "Backend",
+            "members": [2001, 2002, 2003],
+            "projects": [101, 102]
+          },
+          {
+            "id": "ENG-2",
+            "name": "Frontend",
+            "members": [2004, 2005],
+            "projects": [103]
+          }
+        ]
+      },
+      {
+        "id": "HR",
+        "name": "Human Resources",
+        "manager": {
+          "id": 1002,
+          "name": "Priya Singh"
+        },
+        "teams": [
+          {
+            "id": "HR-1",
+            "name": "Recruitment",
+            "members": [3001, 3002]
+          },
+          {
+            "id": "HR-2",
+            "name": "Training",
+            "members": [3003]
+          }
+        ]
+      }
+    ]
+  },
+  "users": [
+    {
+      "id": 1,
+      "username": "jdoe",
+      "profile": {
+        "firstName": "John",
+        "lastName": "Doe",
+        "email": "jdoe@techcorp.com",
+        "phone": null,
+        "addresses": [
+          {
+            "type": "home",
+            "street": "789 Elm St",
+            "city": "Springfield",
+            "state": "IL",
+            "zip": "62704"
+          },
+          {
+            "type": "work",
+            "street": "123 5th Ave",
+            "city": "New York",
+            "state": "NY",
+            "zip": "10001"
+          }
+        ]
+      },
+      "roles": ["employee", "developer"],
+      "lastLogin": "2025-05-18T14:12:00Z",
+      "preferences": {
+        "notifications": {
+          "email": true,
+          "sms": false,
+          "push": true
+        },
+        "theme": "dark",
+        "languages": ["en", "es"]
+      }
+    },
+    {
+      "id": 2,
+      "username": "asmith",
+      "profile": {
+        "firstName": "Anna",
+        "lastName": "Smith",
+        "email": "asmith@techcorp.com",
+        "phone": "555-1234",
+        "addresses": [
+          {
+            "type": "home",
+            "street": "321 Oak St",
+            "city": "Seattle",
+            "state": "WA",
+            "zip": "98101"
+          }
+        ]
+      },
+      "roles": ["employee", "designer"],
+      "lastLogin": "2025-05-19T09:30:00Z",
+      "preferences": {
+        "notifications": {
+          "email": false,
+          "sms": false,
+          "push": true
+        },
+        "theme": "light",
+        "languages": ["en", "fr"]
+      }
+    }
+  ],
+  "projects": [
+    {
+      "id": 101,
+      "name": "Project Phoenix",
+      "description": "Revamp core platform architecture",
+      "status": "active",
+      "startDate": "2025-01-15",
+      "endDate": null,
+      "budget": 2500000.0,
+      "members": [1, 2, 2001, 2004],
+      "milestones": [
+        {
+          "name": "Design Spec",
+          "dueDate": "2025-02-01",
+          "completed": true
+        },
+        {
+          "name": "Prototype",
+          "dueDate": "2025-03-15",
+          "completed": false
+        }
+      ]
+    },
+    {
+      "id": 102,
+      "name": "Project Titan",
+      "description": "New mobile application",
+      "status": "planning",
+      "startDate": "2025-06-01",
+      "endDate": "2026-12-31",
+      "budget": 1500000.0,
+      "members": [2002, 2005],
+      "milestones": []
+    }
+  ],
+  "metrics": {
+    "revenue": {
+      "2025": {
+        "Q1": 1250000.5,
+        "Q2": 1420000.75,
+        "Q3": 0.0,
+        "Q4": 0.0
+      },
+      "2024": {
+        "Q1": 900000.0,
+        "Q2": 980000.25,
+        "Q3": 1100000.0,
+        "Q4": 1150000.6
+      }
+    },
+    "activeUsers": {
+      "daily": 10500,
+      "monthly": 75000
+    },
+    "growthPercent": {
+      "monthly": [5.2, 4.8, 5.1, 5.3]
+    }
+  },
+  "events": [
+    {
+      "timestamp": "2025-05-19T10:00:00Z",
+      "eventType": "login",
+      "userId": 1,
+      "success": true,
+      "metadata": {}
+    },
+    {
+      "timestamp": "2025-05-19T10:05:23Z",
+      "eventType": "file_upload",
+      "userId": 2,
+      "success": true,
+      "metadata": {
+        "fileName": "report.pdf",
+        "fileSize": 234567
+      }
+    },
+    {
+      "timestamp": "2025-05-19T10:15:42Z",
+      "eventType": "error",
+      "userId": null,
+      "success": false,
+      "metadata": {
+        "errorCode": 500,
+        "errorMessage": "Internal Server Error"
+      }
+    }
+  ]
+}
+
