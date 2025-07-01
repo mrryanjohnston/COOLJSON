@@ -48,26 +48,19 @@ For a total of 15 facts.
 ```
 
 Each `element` fact has an instance name set in its `value` slot.
-You may view the parsed JSON by `send`ind the `print` message
+You may view the parsed JSON by `send`ind the `pprint` message
 to any of the instance names like so:
 
 ```
-CLIPS> (send [gen8] print)
-{
-  "\"": "woah\, dude",
-  "hot dog": ["\u64aa yo"]
-}CLIPS> (send [gen51] print)
-{
-  "asdf": 123,
-  "four": [[], 6, "jkl", [{}]]
-}CLIPS> (send [gen16] print)
-{}CLIPS> (send [gen39] print)
-[{
-  "asdf": 123,
-  "four": [[], 6, "jkl", [{}]]
-}, 789.02, "another", [567, "string", {
-  "yo": 1
-}], "hey"]CLIPS> 
+CLIPS> (send [gen8] pprint t)
+{"\"":"woah\, dude","hot dog":["\u64aa yo"]}
+CLIPS> (send [gen51] pprint t)
+{"asdf":123,"four":[[],6,"jkl",[{}]]}
+CLIPS> (send [gen16] pprint t)
+{}
+CLIPS> (send [gen39] pprint t)
+[{"asdf":123,"four":[[],6,"jkl",[{}]]},789.02,"another",[567,"string",{"yo":1}],"hey"]
+CLIPS> 
 ```
 
 You can input your own custom JSON directly from the command line
@@ -87,8 +80,8 @@ CLIPS> (do-for-fact ((?f element)) (eq ?f:name stdin) (ppfact ?f))
 (element 
    (name stdin) 
    (value [gen54]))
-CLIPS> (send [gen54] print)
-["My custom JSON", 987654321.2]CLIPS> 
+CLIPS> (send [gen54] pprint t)
+["My custom JSON",987654321.2]CLIPS> 
 ```
 
 Use functions like `do-for-all-instances` to query your JSON structures.
@@ -96,16 +89,10 @@ For example, in order to find all objects within the parsed `test*.json`
 files that have a key/value pair with key `"asdf"`:
 
 ```
-CLIPS> (do-for-all-instances ((?i JSON-OBJECT) (?member JSON-MEMBER) (?key JSON-STRING)) (and (member$ ?member ?i:members) (eq ?member:key ?key) (eq ?key:value "asdf")) (send ?i print))
-{
-  "asdf": false
-}{
-  "asdf": 123,
-  "four": [[], 6, "jkl", [{}]]
-}{
-  "asdf": 123,
-  "four": [[], 6, "jkl", [{}]]
-}
+CLIPS> (do-for-all-instances ((?i JSON-OBJECT) (?member JSON-MEMBER) (?key JSON-STRING)) (and (member$ ?member ?i:members) (eq ?member:key ?key) (eq ?key:value "asdf")) (send ?i pprint t) (println)
+{"asdf":false}
+{"asdf":123,"four":[[],6,"jkl",[{}]]}
+{"asdf":123,"four":[[],6,"jkl",[{}]]}
 ```
 
 Or, as a `defrule`:
@@ -116,19 +103,21 @@ CLIPS> (defrule find-asdf
 ?member <- (object (is-a JSON-MEMBER) (key =(instance-name ?key)))
 ?i <- (object (is-a JSON-OBJECT) (members $? =(instance-name ?member) $?))
 =>
-(send ?i print))
+(send ?i print)
+(println))
 CLIPS> (run)
-{
-  "asdf": 123,
-  "four": [[], 6, "jkl", [{}]]
-}{
-  "asdf": 123,
-  "four": [[], 6, "jkl", [{}]]
-}{
-  "asdf": false
-}3 rules fired        Run time is 9.79900360107422e-05 seconds.
+{"asdf":false}
+{"asdf":123,"four":[[],6,"jkl",[{}]]}
+{"asdf":123,"four":[[],6,"jkl",[{}]]}
+3 rules fired        Run time is 9.79900360107422e-05 seconds.
 30615.3576642336 rules per second.
 15 mean number of facts (15 maximum).
 51 mean number of instances (51 maximum).
 2 mean number of activations (3 maximum).
 ```
+
+## Testing
+
+Run the test suit with `make test`. It'll run through the files in `tests/cases`
+and make sure that the result of sending `pprint` to the instances
+prints out the contents of the files named the same in `tests/expected`.
