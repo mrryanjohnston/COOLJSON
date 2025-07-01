@@ -4,7 +4,7 @@
 ;
 ; member
 ; ws string ws ':' element
-(defclass JSON (is-a USER))
+(defclass JSON (is-a USER) (slot filename))
 (defclass JSON-NUMBER (is-a JSON) (slot value))
 (defclass JSON-STRING (is-a JSON) (slot value))
 (defclass JSON-ARRAY (is-a JSON) (multislot values))
@@ -546,45 +546,44 @@
 	(retract ?f)
 	(modify ?e (value (make-instance of JSON-NULL))))
 
-(defmessage-handler JSON-NUMBER print primary ()
-	(print ?self:value))
+(defmessage-handler JSON-NUMBER pprint primary (?t)
+	(printout ?t ?self:value))
 
-(defmessage-handler JSON-TRUE print primary ()
-	(print "true"))
+(defmessage-handler JSON-TRUE pprint primary (?t)
+	(printout ?t "true"))
 
-(defmessage-handler JSON-FALSE print primary ()
-	(print "false"))
+(defmessage-handler JSON-FALSE pprint primary (?t)
+	(printout ?t "false"))
 
-(defmessage-handler JSON-NULL print primary ()
-	(print "null"))
+(defmessage-handler JSON-NULL pprint primary (?t)
+	(printout ?t "null"))
 
-(defmessage-handler JSON-STRING print primary ()
-	(print "\"" ?self:value "\""))
+(defmessage-handler JSON-STRING pprint primary (?t)
+	(printout ?t "\"" ?self:value "\""))
 
-(defmessage-handler JSON-ARRAY print primary ()
-	(print "[")
+(defmessage-handler JSON-ARRAY pprint primary (?t)
+	(printout ?t "[")
 	(bind ?vals ?self:values)
 	(bind ?len (length$ ?vals))
 	(bind ?i 0)
 	(foreach ?v ?vals
 		(bind ?i (+ ?i 1))
-		(send ?v print)
-		(if (< ?i ?len) then (print ", ")))
-	(print "]"))
+		(send ?v pprint ?t)
+		(if (< ?i ?len) then (printout ?t ",")))
+	(printout ?t "]"))
 
-(defmessage-handler JSON-MEMBER print primary ()
-	(send ?self:key print)
-	(print ": ")
-	(send ?self:value print))
+(defmessage-handler JSON-MEMBER pprint primary (?t)
+	(send ?self:key pprint ?t)
+	(printout ?t ":")
+	(send ?self:value pprint ?t))
 
-(defmessage-handler JSON-OBJECT print primary ()
-	(print "{")
+(defmessage-handler JSON-OBJECT pprint primary (?t)
+	(printout ?t "{")
 	(bind ?members ?self:members)
 	(bind ?len (length$ ?members))
 	(bind ?i 0)
 	(foreach ?m ?members
 		(bind ?i (+ ?i 1))
-		(print crlf "  ")
-		(send ?m print)
-		(if (< ?i ?len) then (print ",") else (print crlf)))
-	(print "}"))
+		(send ?m pprint ?t)
+		(if (< ?i ?len) then (printout ?t ",") else (printout ?t)))
+	(printout ?t "}"))
