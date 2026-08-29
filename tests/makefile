@@ -1,2 +1,2 @@
 all:
-	clips -f2 test.bat
+	@clips -f2 test.bat

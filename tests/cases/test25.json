@@ -1,0 +1,8 @@
+{
+  "space before colon" : 1,
+  "tab before colon"	:	2,
+  "newline before colon"
+  : 3,
+  "nested" : { "inner key" : [ 4 , { "deep" : "a b c" } ] },
+  "no space":5
+}

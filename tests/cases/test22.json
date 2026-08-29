@@ -1,0 +1,7 @@
+{
+  "no-sign": 1e5,
+  "positive": 2.5e+3,
+  "negative": 3e-2,
+  "capital": 7E7,
+  "nested": { "list": [1e1, 2.0e2, -3e-3] }
+}

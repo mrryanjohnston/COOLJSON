@@ -1,2 +1,2 @@
 test:
-	$(MAKE) -C tests
+	@$(MAKE) --no-print-directory -C tests

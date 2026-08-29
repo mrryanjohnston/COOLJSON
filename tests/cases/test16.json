@@ -1,0 +1,8 @@
+{
+  "empty-object": {},
+  "empty-array": [],
+  "array-of-empty-object": [{}],
+  "array-of-empty-array": [[]],
+  "nested-empty-object": { "inner": {} },
+  "mixed": [{}, [], [{}], [[]]]
+}

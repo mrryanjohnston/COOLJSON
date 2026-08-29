@@ -1,0 +1,8 @@
+{
+  "": "empty key",
+  "braces": "{[,]}:",
+  "colon": "a:b",
+  "comma": "a,b",
+  "brackets": "[1,2]",
+  "spaces":  "  leading and trailing  "
+}

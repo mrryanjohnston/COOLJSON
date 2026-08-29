@@ -53,7 +53,8 @@
 	(or
 		(element (name ?name) (value nil))
 		(obj (name ?name) (members $?members&:(= 0 (length$ ?members))|:(instancep (nth$ (length$ ?members) ?members))))
-		(array (name ?name) (values $?values&:(= 0 (length$ ?values))|:(instancep (nth$ (length$ ?values) ?values)))))
+		(array (name ?name) (values $?values&:(= 0 (length$ ?values))|:(instancep (nth$ (length$ ?values) ?values))))
+		(member (name ?name) (key ?key&:(instancep ?key)) (value nil)))
 	=>
 	(retract ?p))
 
@@ -257,7 +258,7 @@
 
 (defrule illegal-zero
 	(filename ?name)
-	(popped-char ?name ?char&~46|~69|~101|~-1) ; . E e EOF
+	(popped-char ?name ?char&~46&~69&~101&~-1&~9&~10&~13&~32&~44&~93&~125) ; . E e EOF ws , ] }
 	(number (name ?name) (value ?number&"0"|"-0"))
 	=>
 	(format t "ILLEGAL CHAR: %c found after %s" ?char ?number))
@@ -314,6 +315,14 @@
 	(retract ?p)
 	(modify ?n (value ?number ?fraction "")))
 
+(defrule start-exponent-no-fraction
+	(filename ?name)
+	?p <- (popped-char ?name 69|101) ; E e
+	?n <- (number (name ?name) (value ?number))
+	=>
+	(retract ?p)
+	(modify ?n (value ?number "" "")))
+
 (defrule find-exponent-sign
 	(filename ?name)
 	?p <- (popped-char ?name ?char&43|45) ; + -
@@ -322,9 +331,17 @@
 	(retract ?p)
 	(modify ?n (value ?number ?fraction (format nil "%c" ?char) "")))
 
+(defrule find-exponent-no-sign
+	(filename ?name)
+	?p <- (popped-char ?name ?char&48|49|50|51|52|53|54|55|56|57) ; 0-9
+	?n <- (number (name ?name) (value ?number ?fraction ""))
+	=>
+	(retract ?p)
+	(modify ?n (value ?number ?fraction "" (format nil "%c" ?char))))
+
 (defrule illegal-exponent-sign
 	(filename ?name)
-	(popped-char ?name ?char&~43|~45) ; 0-9 EOF
+	(popped-char ?name ?char&~43&~45&~48&~49&~50&~51&~52&~53&~54&~55&~56&~57&~-1) ; + - 0-9 EOF
 	(number (name ?name) (value ? ? ""))
 	=>
 	(format t "ILLEGAL CHAR: %c found when parsing exponent sign" ?char))
@@ -339,7 +356,7 @@
 
 (defrule illegal-exponent
 	(filename ?name)
-	(popped-char ?name ?char&~48&~49&~50&~51&~52&~53&~54&~55&~56&~57&~-1) ; 0-9 EOF
+	(popped-char ?name ?char&~48&~49&~50&~51&~52&~53&~54&~55&~56&~57&~-1&~9&~10&~13&~32&~44&~93&~125) ; 0-9 EOF ws , ] }
 	(number (name ?name) (value ? ? ? ?))
 	=>
 	(format t "ILLEGAL CHAR: %c found when parsing exponent" ?char))
@@ -390,7 +407,7 @@
 
 (defrule end-number-exponent
 	(filename ?name)
-	?n <- (number (name ?name) (value ?number ?fraction ?sign ?exponent))
+	?n <- (number (name ?name) (value ?number ?fraction&~"" ?sign ?exponent))
 	?e <- (element (name ?name) (value ?n))
 	(or
 		(popped-char ?name EOF)
@@ -404,7 +421,25 @@
 			(obj (name ?name) (members $? ?m))))
 	=>
 	(retract ?n)
-	(modify ?e (value (make-instance of JSON-NUMBER (value (format nil "%s.%se%c%s" ?number ?fraction ?sign ?exponent))))))
+	(modify ?e (value (make-instance of JSON-NUMBER (value (str-cat ?number "." ?fraction "e" ?sign ?exponent))))))
+
+(defrule end-number-exponent-no-fraction
+	(filename ?name)
+	?n <- (number (name ?name) (value ?number "" ?sign ?exponent))
+	?e <- (element (name ?name) (value ?n))
+	(or
+		(popped-char ?name EOF)
+		(popped-char ?name 9|10|13|32) ; whitespace
+		(and
+			(popped-char ?name 44|93) ; , ]
+			(array (name ?name) (values $? ?e)))
+		(and
+			(popped-char ?name 44|125) ; , }
+			?m <- (member (name ?name) (value ?e))
+			(obj (name ?name) (members $? ?m))))
+	=>
+	(retract ?n)
+	(modify ?e (value (make-instance of JSON-NUMBER (value (str-cat ?number "e" ?sign ?exponent))))))
 
 (defrule start-false-null-true
 	(filename ?name)

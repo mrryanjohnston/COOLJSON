@@ -1,0 +1,1 @@
+[true, [false, [null, [true, false, null]]], { "t": true, "f": false, "n": null, "nested": { "n": [null] } }]

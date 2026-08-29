@@ -11,7 +11,7 @@ You must have CLIPS installed and available on your system. Check out the
 for download links or use
 [CLIPSenv](https://github.com/mrryanjohnston/CLIPSenv)
 to install. The file `program.bat` demonstrates parsing the `test*.json`
-files present in this directory. Running it looks like this:
+files present in `tests/cases`. Running it looks like this:
 
 ```
 $ clips -f2 program.bat
