@@ -29,11 +29,11 @@ Type `(facts)` to see the `element` facts which track the `JSON` instances:
 
 ```
 CLIPS> (facts)
-f-1     (filename test.json)
-f-2     (filename test2.json)
-f-3     (filename test3.json)
-f-4     (filename test4.json)
-f-5     (filename test5.json)
+f-1     (json-parse (stream test.json) (id test.json))
+f-2     (json-parse (stream test2.json) (id test2.json))
+f-3     (json-parse (stream test3.json) (id test3.json))
+f-4     (json-parse (stream test4.json) (id test4.json))
+f-5     (json-parse (stream test5.json) (id test5.json))
 f-6     (element (name test5.json) (value [gen8]))
 f-77    (popped-char test5.json 10)
 f-78    (element (name test4.json) (value [gen15]))
@@ -64,10 +64,10 @@ CLIPS>
 ```
 
 You can input your own custom JSON directly from the command line
-by `assert`ing a `filename` fact for `stdin`:
+by asserting the start fact for `stdin`:
 
 ```
-CLIPS>(assert (filename stdin))
+CLIPS>(assert (json-parse (stream stdin) (id stdin)) (json-ready (id stdin)))
 <Fact-349>
 CLIPS> (run)
 [ "My custom JSON", 987654321.2 ]
@@ -121,3 +121,21 @@ CLIPS> (run)
 Run the test suit with `make test`. It'll run through the files in `tests/cases`
 and make sure that the result of sending `pprint` to the instances
 prints out the contents of the files named the same in `tests/expected`.
+
+## The start fact and the end fact
+
+Since 15 September 2026 each construct of this codec has the prefix `json-`,
+and the codec has its own start fact, so it loads next to other codecs in
+one environment. Open the stream and assert the start fact with the logical
+name of the stream and an id for the results, then run:
+
+    (open "input" input)
+    (assert (json-parse (stream input) (id input)) (json-ready (id input)))
+    (run)
+
+The codec announces each result with `(json-done (id) (element))`, a fact with the `id` and
+the object it made; the program that matches the fact retracts it. Every
+object carries the `id` in its `id` slot, where it carried the
+`filename` before.
+
+A protocol codec reads only while a `json-ready` fact for the id exists, and a complete message consumes it, so a server can poll between messages. A program that reads a file asserts the ready fact again until the codec asserts `json-eof`.

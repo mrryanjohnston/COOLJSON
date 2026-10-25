@@ -4,7 +4,7 @@
 ;
 ; member
 ; ws string ws ':' element
-(defclass JSON (is-a USER) (slot filename))
+(defclass JSON (is-a USER) (slot id))
 (defclass JSON-NUMBER (is-a JSON) (slot value))
 (defclass JSON-STRING (is-a JSON) (slot value))
 (defclass JSON-ARRAY (is-a JSON) (multislot values))
@@ -13,569 +13,598 @@
 (defclass JSON-FALSE (is-a JSON))
 (defclass JSON-NULL (is-a JSON))
 (defclass JSON-TRUE (is-a JSON))
-(deftemplate string
+(deftemplate json-string
 	(slot name)
 	(slot value))
-(deftemplate number
+(deftemplate json-number
 	(slot name)
 	(multislot value))
-(deftemplate array
+(deftemplate json-array
 	(slot name)
 	(multislot values))
-(deftemplate obj
+(deftemplate json-obj
 	(slot name)
 	(multislot members))
-(deftemplate element
+(deftemplate json-element
 	(slot name)
 	(slot value (default nil)))
-(deftemplate member
+(deftemplate json-member
 	(slot name)
 	(slot key)
 	(slot value (default nil)))
-(deftemplate false-null-true
+(deftemplate json-false-null-true
 	(slot name)
 	(multislot values))
 
-(defrule start-parsing
-	(filename ?name)
-	=>
-	(assert (element (name ?name))))
 
-(defrule pop-char
-	(filename ?name)
-	(not (popped-char ?name ?))
-	=>
-	(assert (popped-char ?name (get-char ?name))))
+;;; the start fact: a program asserts it with the
+;;; logical name of an open file or socket and an id for the result, then
+;;; asserts json-ready for the id and runs.  The codec reads one JSON value.
+(deftemplate json-parse
+	(slot stream)
+	(slot id))
 
-(defrule ignore-whitespace
-	(filename ?name)
-	?p <- (popped-char ?name 9|10|13|32)
+;;; the codec reads only while a ready fact for the id exists, and it
+;;; retracts the fact when the value is complete
+(deftemplate json-ready
+	(slot id))
+
+;;; one stream that the codec reads: the id of its facts and its logical name
+(deftemplate json-stream
+	(slot id)
+	(slot stream))
+
+;;; the end facts: the value, or the end of the stream before any value.
+;;; The program that matches them retracts them.
+(deftemplate json-done
+	(slot id)
+	(slot element))
+
+(deftemplate json-eof
+	(slot id))
+
+(defrule json-start-parsing
+	?p <- (json-parse (stream ?stream) (id ?name))
+	=>
+	(retract ?p)
+	(assert (json-stream (id ?name) (stream ?stream)) (json-element (name ?name))))
+
+(defrule json-pop-char
+	(json-ready (id ?name))
+	(json-stream (id ?name) (stream ?stream))
+	(not (json-popped-char ?name ?))
+	=>
+	(assert (json-popped-char ?name (get-char ?stream))))
+
+(defrule json-ignore-whitespace
+	(json-stream (id ?name))
+	?p <- (json-popped-char ?name 9|10|13|32)
 	(or
-		(element (name ?name) (value nil))
-		(obj (name ?name) (members $?members&:(= 0 (length$ ?members))|:(instancep (nth$ (length$ ?members) ?members))))
-		(array (name ?name) (values $?values&:(= 0 (length$ ?values))|:(instancep (nth$ (length$ ?values) ?values))))
-		(member (name ?name) (key ?key&:(instancep ?key)) (value nil)))
+		(json-element (name ?name) (value nil))
+		(json-obj (name ?name) (members $?members&:(= 0 (length$ ?members))|:(instancep (nth$ (length$ ?members) ?members))))
+		(json-array (name ?name) (values $?values&:(= 0 (length$ ?values))|:(instancep (nth$ (length$ ?values) ?values))))
+		(json-member (name ?name) (key ?key&:(instancep ?key)) (value nil)))
 	=>
 	(retract ?p))
 
-(defrule init-element-for-empty-array
-	(filename ?name)
-	?a <- (array (name ?name) (values))
-	(not (element (name ?name) (value nil)))
+(defrule json-init-element-for-empty-array
+	(json-stream (id ?name))
+	?a <- (json-array (name ?name) (values))
+	(not (json-element (name ?name) (value nil)))
 	=>
-	(modify ?a (values (assert (element (name ?name))))))
+	(modify ?a (values (assert (json-element (name ?name))))))
 
-(defrule init-element-for-empty-obj
-	(filename ?name)
-	(popped-char ?name 34)
-	?o <- (obj (name ?name) (members))
-	(not (element (name ?name) (value nil)))
+(defrule json-init-element-for-empty-obj
+	(json-stream (id ?name))
+	(json-popped-char ?name 34)
+	?o <- (json-obj (name ?name) (members))
+	(not (json-element (name ?name) (value nil)))
 	=>
-	(modify ?o (members (assert (member (name ?name) (key (assert (element (name ?name)))))))))
+	(modify ?o (members (assert (json-member (name ?name) (key (assert (json-element (name ?name)))))))))
 
-(defrule start-array
-	(filename ?name)
-	?p <- (popped-char ?name 91) ; [
-	?e <- (element (name ?name) (value nil))
-	(not (member (name ?name) (key ?e)))
+(defrule json-start-array
+	(json-stream (id ?name))
+	?p <- (json-popped-char ?name 91) ; [
+	?e <- (json-element (name ?name) (value nil))
+	(not (json-member (name ?name) (key ?e)))
 	=>
 	(retract ?p)
-	(modify ?e (value (assert (array (name ?name))))))
+	(modify ?e (value (assert (json-array (name ?name))))))
 
-(defrule array-unwrap-element
-	(filename ?name)
-	?e <- (element (name ?name) (value ?obj&:(instancep ?obj)))
-	?a <- (array (name ?name) (values $?values ?e))
+(defrule json-array-unwrap-element
+	(json-stream (id ?name))
+	?e <- (json-element (name ?name) (value ?obj&:(instancep ?obj)))
+	?a <- (json-array (name ?name) (values $?values ?e))
 	=>
 	(retract ?e)
 	(modify ?a (values ?values ?obj)))
 
-(defrule member-value-unwrap-element
-	(filename ?name)
-	?e <- (element (name ?name) (value ?obj&:(instancep ?obj)))
-	?m <- (member (name ?name) (value ?e))
+(defrule json-member-value-unwrap-element
+	(json-stream (id ?name))
+	?e <- (json-element (name ?name) (value ?obj&:(instancep ?obj)))
+	?m <- (json-member (name ?name) (value ?e))
 	=>
 	(retract ?e)
 	(modify ?m (value ?obj)))
 
-(defrule array-find-comma-next-element
-	(filename ?name)
-	?p <- (popped-char ?name 44) ; ,
-	?a <- (array (name ?name) (values $?values&:(= 0 (length$ ?values))|:(instancep (nth$ (length$ ?values) ?values))))
+(defrule json-array-find-comma-next-element
+	(json-stream (id ?name))
+	?p <- (json-popped-char ?name 44) ; ,
+	?a <- (json-array (name ?name) (values $?values&:(= 0 (length$ ?values))|:(instancep (nth$ (length$ ?values) ?values))))
 	=>
 	(retract ?p)
-	(modify ?a (values ?values (assert (element (name ?name))))))
+	(modify ?a (values ?values (assert (json-element (name ?name))))))
 
-(defrule end-array
-	(filename ?name)
-	?p <- (popped-char ?name 93) ; ]
-	?a <- (array (name ?name) (values $?values ?value&:(instancep ?value)))
-	?e <- (element (name ?name) (value ?a))
+(defrule json-end-array
+	(json-stream (id ?name))
+	?p <- (json-popped-char ?name 93) ; ]
+	?a <- (json-array (name ?name) (values $?values ?value&:(instancep ?value)))
+	?e <- (json-element (name ?name) (value ?a))
 	=>
 	(retract ?p ?a)
 	(modify ?e (value (make-instance of JSON-ARRAY (values ?values ?value)))))
 
-(defrule end-empty-array
-	(filename ?name)
-	?p <- (popped-char ?name 93) ; ]
-	?ee <- (element (name ?name) (value nil))
-	?a <- (array (name ?name) (values ?ee))
-	?e <- (element (name ?name) (value ?a))
+(defrule json-end-empty-array
+	(json-stream (id ?name))
+	?p <- (json-popped-char ?name 93) ; ]
+	?ee <- (json-element (name ?name) (value nil))
+	?a <- (json-array (name ?name) (values ?ee))
+	?e <- (json-element (name ?name) (value ?a))
 	=>
 	(retract ?ee ?p ?a)
 	(modify ?e (value (make-instance of JSON-ARRAY))))
 
-(defrule start-object
-	(filename ?name)
-	?p <- (popped-char ?name 123) ; {
-	?e <- (element (name ?name) (value nil))
-	(not (member (name ?name) (key ?e)))
+(defrule json-start-object
+	(json-stream (id ?name))
+	?p <- (json-popped-char ?name 123) ; {
+	?e <- (json-element (name ?name) (value nil))
+	(not (json-member (name ?name) (key ?e)))
 	=>
 	(retract ?p)
-	(modify ?e (value (assert (obj (name ?name))))))
+	(modify ?e (value (assert (json-obj (name ?name))))))
 
-(defrule end-member-key
-	(filename ?name)
+(defrule json-end-member-key
+	(json-stream (id ?name))
 	?s <- (object (is-a JSON-STRING))
-	?e <- (element (name ?name) (value =(instance-name ?s)))
-	?m <- (member (name ?name) (key ?e))
+	?e <- (json-element (name ?name) (value =(instance-name ?s)))
+	?m <- (json-member (name ?name) (key ?e))
 	=>
 	(retract ?e)
 	(modify ?m (key (instance-name ?s))))
 
-(defrule find-colon-member
-	(filename ?name)
-	?p <- (popped-char ?name 58) ; :
-	?m <- (member (name ?name) (key ?key&:(instancep ?key)) (value nil))
+(defrule json-find-colon-member
+	(json-stream (id ?name))
+	?p <- (json-popped-char ?name 58) ; :
+	?m <- (json-member (name ?name) (key ?key&:(instancep ?key)) (value nil))
 	=>
 	(retract ?p)
-	(modify ?m (value (assert (element (name ?name))))))
+	(modify ?m (value (assert (json-element (name ?name))))))
 
-(defrule find-comma-next-member
-	(filename ?name)
-	?p <- (popped-char ?name 44) ; ,
-	?o <- (obj (name ?name) (members $?members&:(= 0 (length$ ?members))|:(instancep (nth$ (length$ ?members) ?members))))
+(defrule json-find-comma-next-member
+	(json-stream (id ?name))
+	?p <- (json-popped-char ?name 44) ; ,
+	?o <- (json-obj (name ?name) (members $?members&:(= 0 (length$ ?members))|:(instancep (nth$ (length$ ?members) ?members))))
 	=>
 	(retract ?p)
-	(modify ?o (members ?members (assert (member (name ?name) (key (assert (element (name ?name)))))))))
+	(modify ?o (members ?members (assert (json-member (name ?name) (key (assert (json-element (name ?name)))))))))
 
-(defrule end-object
-	(filename ?name)
-	?p <- (popped-char ?name 125) ; }
-	?o <- (obj (name ?name) (members $?members&:(= 0 (length$ ?members))|:(instancep (nth$ (length$ ?members) ?members))))
-	?e <- (element (name ?name) (value ?o))
+(defrule json-end-object
+	(json-stream (id ?name))
+	?p <- (json-popped-char ?name 125) ; }
+	?o <- (json-obj (name ?name) (members $?members&:(= 0 (length$ ?members))|:(instancep (nth$ (length$ ?members) ?members))))
+	?e <- (json-element (name ?name) (value ?o))
 	=>
 	(retract ?p ?o)
 	(modify ?e (value (make-instance of JSON-OBJECT (members ?members)))))
 
-(defrule start-string
-	(filename ?name)
-	?p <- (popped-char ?name 34) ; "
-	?e <- (element (name ?name) (value nil))
+(defrule json-start-string
+	(json-stream (id ?name))
+	?p <- (json-popped-char ?name 34) ; "
+	?e <- (json-element (name ?name) (value nil))
 	=>
 	(retract ?p)
-	(modify ?e (value (assert (string (name ?name) (value ""))))))
+	(modify ?e (value (assert (json-string (name ?name) (value ""))))))
 
-(defrule continue-string
-	(filename ?name)
-	?p <- (popped-char ?name ?char&~34&~92) ; " \
-	?s <- (string (name ?name) (value ?str))
-	(not (escape ?name))
+(defrule json-continue-string
+	(json-stream (id ?name))
+	?p <- (json-popped-char ?name ?char&~34&~92) ; " \
+	?s <- (json-string (name ?name) (value ?str))
+	(not (json-escape ?name))
 	=>
 	(retract ?p)
 	(modify ?s (value (format nil "%s%c" ?str ?char))))
 
-(defrule end-string
-	(filename ?name)
-	?p <- (popped-char ?name 34) ; "
-	?s <- (string (name ?name) (value ?str))
-	?e <- (element (name ?name) (value ?s))
-	(not (escape ?name))
+(defrule json-end-string
+	(json-stream (id ?name))
+	?p <- (json-popped-char ?name 34) ; "
+	?s <- (json-string (name ?name) (value ?str))
+	?e <- (json-element (name ?name) (value ?s))
+	(not (json-escape ?name))
 	=>
 	(retract ?p ?s)
 	(modify ?e (value (make-instance of JSON-STRING (value ?str)))))
 
-(defrule begin-string-escape
-	(filename ?name)
-	?p <- (popped-char ?name 92) ; \
-	?s <- (string (name ?name) (value ?str))
-	(not (escape ?name))
+(defrule json-begin-string-escape
+	(json-stream (id ?name))
+	?p <- (json-popped-char ?name 92) ; \
+	?s <- (json-string (name ?name) (value ?str))
+	(not (json-escape ?name))
 	=>
 	(retract ?p)
 	(modify ?s (value (format nil "%s%c" ?str 92)))
-	(assert (escape ?name)))
+	(assert (json-escape ?name)))
 
-(defrule begin-string-escape-hexadecimal
-	(filename ?name)
-	?p <- (popped-char ?name 117) ; u
-	?s <- (string (name ?name) (value ?str))
-	(escape ?name)
-	(not (hexadecimal ?name))
+(defrule json-begin-string-escape-hexadecimal
+	(json-stream (id ?name))
+	?p <- (json-popped-char ?name 117) ; u
+	?s <- (json-string (name ?name) (value ?str))
+	(json-escape ?name)
+	(not (json-hexadecimal ?name))
 	=>
 	(retract ?p)
 	(modify ?s (value (format nil "%s%c" ?str 117)))
-	(assert (hexadecimal ?name)))
+	(assert (json-hexadecimal ?name)))
 
-(defrule end-string-escape
-	(filename ?name)
-	?p <- (popped-char ?name ?char&~117) ; u
-	?s <- (string (name ?name) (value ?str))
-	?e <- (escape ?name)
-	(not (hexadecimal ?name $?))
+(defrule json-end-string-escape
+	(json-stream (id ?name))
+	?p <- (json-popped-char ?name ?char&~117) ; u
+	?s <- (json-string (name ?name) (value ?str))
+	?e <- (json-escape ?name)
+	(not (json-hexadecimal ?name $?))
 	=>
 	(retract ?p ?e)
 	(modify ?s (value (format nil "%s%c" ?str ?char))))
 
-(defrule continue-string-escape-hexadecimal
-	(filename ?name)
-	?p <- (popped-char ?name ?char&48|49|50|51|52|53|54|55|56|57|97|98|99|100|101|102|65|66|67|68|69|70) ; 0-9 a-f A-F
-	?s <- (string (name ?name) (value ?str))
-	(escape ?name)
-	?h <- (hexadecimal ?name $?hex&:(> 3 (length$ ?hex)))
+(defrule json-continue-string-escape-hexadecimal
+	(json-stream (id ?name))
+	?p <- (json-popped-char ?name ?char&48|49|50|51|52|53|54|55|56|57|97|98|99|100|101|102|65|66|67|68|69|70) ; 0-9 a-f A-F
+	?s <- (json-string (name ?name) (value ?str))
+	(json-escape ?name)
+	?h <- (json-hexadecimal ?name $?hex&:(> 3 (length$ ?hex)))
 	=>
 	(retract ?p ?h)
 	(modify ?s (value (format nil "%s%c" ?str ?char)))
-	(assert (hexadecimal ?name $?hex ?char)))
+	(assert (json-hexadecimal ?name $?hex ?char)))
 
-(defrule end-string-escape-hexadecimal
-	(filename ?name)
-	?p <- (popped-char ?name ?char&48|49|50|51|52|53|54|55|56|57|97|98|99|100|101|102|65|66|67|68|69|70) ; 0-9 a-f A-F
-	?s <- (string (name ?name) (value ?str))
-	?e <- (escape ?name)
-	?h <- (hexadecimal ?name ? ? ?)
+(defrule json-end-string-escape-hexadecimal
+	(json-stream (id ?name))
+	?p <- (json-popped-char ?name ?char&48|49|50|51|52|53|54|55|56|57|97|98|99|100|101|102|65|66|67|68|69|70) ; 0-9 a-f A-F
+	?s <- (json-string (name ?name) (value ?str))
+	?e <- (json-escape ?name)
+	?h <- (json-hexadecimal ?name ? ? ?)
 	=>
 	(retract ?p ?e ?h)
 	(modify ?s (value (format nil "%s%c" ?str ?char))))
 
-(defrule start-number
-	(filename ?name)
-	?p <- (popped-char ?name ?char&45|48|49|50|51|52|53|54|55|56|57) ; - 0-9
-	?e <- (element (name ?name) (value nil))
-	(not (member (name ?name) (key ?e)))
+(defrule json-start-number
+	(json-stream (id ?name))
+	?p <- (json-popped-char ?name ?char&45|48|49|50|51|52|53|54|55|56|57) ; - 0-9
+	?e <- (json-element (name ?name) (value nil))
+	(not (json-member (name ?name) (key ?e)))
 	=>
 	(retract ?p)
-	(modify ?e (value (assert (number (name ?name) (value (format nil "%c" ?char)))))))
+	(modify ?e (value (assert (json-number (name ?name) (value (format nil "%c" ?char)))))))
 
-(defrule illegal-zero
-	(filename ?name)
-	(popped-char ?name ?char&~46&~69&~101&~-1&~9&~10&~13&~32&~44&~93&~125) ; . E e EOF ws , ] }
-	(number (name ?name) (value ?number&"0"|"-0"))
+(defrule json-illegal-zero
+	(json-stream (id ?name))
+	(json-popped-char ?name ?char&~46&~69&~101&~-1&~9&~10&~13&~32&~44&~93&~125) ; . E e EOF ws , ] }
+	(json-number (name ?name) (value ?number&"0"|"-0"))
 	=>
 	(format t "ILLEGAL CHAR: %c found after %s" ?char ?number))
 
-(defrule illegal-number
-	(filename ?name)
-	(popped-char ?name ?char&~46&~48&~49&~50&~51&~52&~53&~54&~55&~56&~57&~69&~101&~-1) ; . 0-9 E e EOF
-	?n <- (number (name ?name))
-	?e <- (element (name ?name) (value ?n))
-	(not (member (name ?name) (value ?e)))
-	(not (array (name ?name) (values $? ?e)))
+(defrule json-illegal-number
+	(json-stream (id ?name))
+	(json-popped-char ?name ?char&~46&~48&~49&~50&~51&~52&~53&~54&~55&~56&~57&~69&~101&~-1) ; . 0-9 E e EOF
+	?n <- (json-number (name ?name))
+	?e <- (json-element (name ?name) (value ?n))
+	(not (json-member (name ?name) (value ?e)))
+	(not (json-array (name ?name) (values $? ?e)))
 	=>
 	(format t "ILLEGAL CHAR: %c found when parsing number" ?char))
 
-(defrule continue-number
-	(filename ?name)
-	?p <- (popped-char ?name ?char&48|49|50|51|52|53|54|55|56|57) ; 0-9
-	?n <- (number (name ?name) (value ?number))
+(defrule json-continue-number
+	(json-stream (id ?name))
+	?p <- (json-popped-char ?name ?char&48|49|50|51|52|53|54|55|56|57) ; 0-9
+	?n <- (json-number (name ?name) (value ?number))
 	=>
 	(retract ?p)
 	(modify ?n (value (format nil "%s%c" ?number ?char))))
 
-(defrule start-fraction
-	(filename ?name)
-	?p <- (popped-char ?name 46) ; .
-	?n <- (number (name ?name) (value ?number))
+(defrule json-start-fraction
+	(json-stream (id ?name))
+	?p <- (json-popped-char ?name 46) ; .
+	?n <- (json-number (name ?name) (value ?number))
 	=>
 	(retract ?p)
 	(modify ?n (value ?number "")))
 
-(defrule continue-fraction
-	(filename ?name)
-	?p <- (popped-char ?name ?char&48|49|50|51|52|53|54|55|56|57) ; 0-9
-	?n <- (number (name ?name) (value ?number ?fraction))
+(defrule json-continue-fraction
+	(json-stream (id ?name))
+	?p <- (json-popped-char ?name ?char&48|49|50|51|52|53|54|55|56|57) ; 0-9
+	?n <- (json-number (name ?name) (value ?number ?fraction))
 	=>
 	(retract ?p)
 	(modify ?n (value ?number (format nil "%s%c" ?fraction ?char))))
 
-(defrule illegal-fraction
-	(filename ?name)
-	(popped-char ?name ?char&~48&~49&~50&~51&~52&~53&~54&~55&~56&~57&~69&~101&~-1) ; 0-9 E e EOF
-	?n <- (number (name ?name) (value ? ?))
-	?e <- (element (name ?name) (value ?n))
-	(not (member (name ?name) (value ?e)))
-	(not (array (name ?name) (values $? ?e)))
+(defrule json-illegal-fraction
+	(json-stream (id ?name))
+	(json-popped-char ?name ?char&~48&~49&~50&~51&~52&~53&~54&~55&~56&~57&~69&~101&~-1) ; 0-9 E e EOF
+	?n <- (json-number (name ?name) (value ? ?))
+	?e <- (json-element (name ?name) (value ?n))
+	(not (json-member (name ?name) (value ?e)))
+	(not (json-array (name ?name) (values $? ?e)))
 	=>
 	(format t "ILLEGAL CHAR: %c found when parsing fraction" ?char))
 
-(defrule start-exponent
-	(filename ?name)
-	?p <- (popped-char ?name 69|101) ; E e
-	?n <- (number (name ?name) (value ?number ?fraction))
+(defrule json-start-exponent
+	(json-stream (id ?name))
+	?p <- (json-popped-char ?name 69|101) ; E e
+	?n <- (json-number (name ?name) (value ?number ?fraction))
 	=>
 	(retract ?p)
 	(modify ?n (value ?number ?fraction "")))
 
-(defrule start-exponent-no-fraction
-	(filename ?name)
-	?p <- (popped-char ?name 69|101) ; E e
-	?n <- (number (name ?name) (value ?number))
+(defrule json-start-exponent-no-fraction
+	(json-stream (id ?name))
+	?p <- (json-popped-char ?name 69|101) ; E e
+	?n <- (json-number (name ?name) (value ?number))
 	=>
 	(retract ?p)
 	(modify ?n (value ?number "" "")))
 
-(defrule find-exponent-sign
-	(filename ?name)
-	?p <- (popped-char ?name ?char&43|45) ; + -
-	?n <- (number (name ?name) (value ?number ?fraction ""))
+(defrule json-find-exponent-sign
+	(json-stream (id ?name))
+	?p <- (json-popped-char ?name ?char&43|45) ; + -
+	?n <- (json-number (name ?name) (value ?number ?fraction ""))
 	=>
 	(retract ?p)
 	(modify ?n (value ?number ?fraction (format nil "%c" ?char) "")))
 
-(defrule find-exponent-no-sign
-	(filename ?name)
-	?p <- (popped-char ?name ?char&48|49|50|51|52|53|54|55|56|57) ; 0-9
-	?n <- (number (name ?name) (value ?number ?fraction ""))
+(defrule json-find-exponent-no-sign
+	(json-stream (id ?name))
+	?p <- (json-popped-char ?name ?char&48|49|50|51|52|53|54|55|56|57) ; 0-9
+	?n <- (json-number (name ?name) (value ?number ?fraction ""))
 	=>
 	(retract ?p)
 	(modify ?n (value ?number ?fraction "" (format nil "%c" ?char))))
 
-(defrule illegal-exponent-sign
-	(filename ?name)
-	(popped-char ?name ?char&~43&~45&~48&~49&~50&~51&~52&~53&~54&~55&~56&~57&~-1) ; + - 0-9 EOF
-	(number (name ?name) (value ? ? ""))
+(defrule json-illegal-exponent-sign
+	(json-stream (id ?name))
+	(json-popped-char ?name ?char&~43&~45&~48&~49&~50&~51&~52&~53&~54&~55&~56&~57&~-1) ; + - 0-9 EOF
+	(json-number (name ?name) (value ? ? ""))
 	=>
 	(format t "ILLEGAL CHAR: %c found when parsing exponent sign" ?char))
 
-(defrule continue-exponent
-	(filename ?name)
-	?p <- (popped-char ?name ?char&48|49|50|51|52|53|54|55|56|57) ; 0-9
-	?n <- (number (name ?name) (value ?number ?fraction ?sign ?exponent))
+(defrule json-continue-exponent
+	(json-stream (id ?name))
+	?p <- (json-popped-char ?name ?char&48|49|50|51|52|53|54|55|56|57) ; 0-9
+	?n <- (json-number (name ?name) (value ?number ?fraction ?sign ?exponent))
 	=>
 	(retract ?p)
 	(modify ?n (value ?number ?fraction ?sign (format nil "%s%c" ?exponent ?char))))
 
-(defrule illegal-exponent
-	(filename ?name)
-	(popped-char ?name ?char&~48&~49&~50&~51&~52&~53&~54&~55&~56&~57&~-1&~9&~10&~13&~32&~44&~93&~125) ; 0-9 EOF ws , ] }
-	(number (name ?name) (value ? ? ? ?))
+(defrule json-illegal-exponent
+	(json-stream (id ?name))
+	(json-popped-char ?name ?char&~48&~49&~50&~51&~52&~53&~54&~55&~56&~57&~-1&~9&~10&~13&~32&~44&~93&~125) ; 0-9 EOF ws , ] }
+	(json-number (name ?name) (value ? ? ? ?))
 	=>
 	(format t "ILLEGAL CHAR: %c found when parsing exponent" ?char))
 
-(defrule end-member
-	(filename ?name)
-	?m <- (member (name ?name) (key ?key) (value ?value&:(instancep ?value)))
-	?o <- (obj (name ?name) (members $?members ?m))
+(defrule json-end-member
+	(json-stream (id ?name))
+	?m <- (json-member (name ?name) (key ?key) (value ?value&:(instancep ?value)))
+	?o <- (json-obj (name ?name) (members $?members ?m))
 	=>
 	(retract ?m)
 	(modify ?o (members ?members (make-instance of JSON-MEMBER (key ?key) (value ?value)))))
 
-(defrule end-number
-	(filename ?name)
-	?n <- (number (name ?name) (value ?number))
-	?e <- (element (name ?name) (value ?n))
+(defrule json-end-number
+	(json-stream (id ?name))
+	?n <- (json-number (name ?name) (value ?number))
+	?e <- (json-element (name ?name) (value ?n))
 	(or
-		(popped-char ?name EOF)
-		(popped-char ?name 9|10|13|32) ; whitespace
+		(json-popped-char ?name EOF)
+		(json-popped-char ?name 9|10|13|32) ; whitespace
 		(and
-			(popped-char ?name 44|93) ; , ]
-			(array (name ?name) (values $? ?e)))
+			(json-popped-char ?name 44|93) ; , ]
+			(json-array (name ?name) (values $? ?e)))
 		(and
-			(popped-char ?name 44|125) ; , }
-			?m <- (member (name ?name) (value ?e))
-			(obj (name ?name) (members $? ?m))))
+			(json-popped-char ?name 44|125) ; , }
+			?m <- (json-member (name ?name) (value ?e))
+			(json-obj (name ?name) (members $? ?m))))
 	=>
 	(retract ?n)
 	(modify ?e (value (make-instance of JSON-NUMBER (value (string-to-field ?number))))))
 
-(defrule end-number-fraction
-	(filename ?name)
-	?n <- (number (name ?name) (value ?number ?fraction))
-	?e <- (element (name ?name) (value ?n))
+(defrule json-end-number-fraction
+	(json-stream (id ?name))
+	?n <- (json-number (name ?name) (value ?number ?fraction))
+	?e <- (json-element (name ?name) (value ?n))
 	(or
-		(popped-char ?name EOF)
-		(popped-char ?name 9|10|13|32) ; whitespace
+		(json-popped-char ?name EOF)
+		(json-popped-char ?name 9|10|13|32) ; whitespace
 		(and
-			(popped-char ?name 44|93) ; , ]
-			(array (name ?name) (values $? ?e)))
+			(json-popped-char ?name 44|93) ; , ]
+			(json-array (name ?name) (values $? ?e)))
 		(and
-			(popped-char ?name 44|125) ; , }
-			?m <- (member (name ?name) (value ?e))
-			(obj (name ?name) (members $? ?m))))
+			(json-popped-char ?name 44|125) ; , }
+			?m <- (json-member (name ?name) (value ?e))
+			(json-obj (name ?name) (members $? ?m))))
 	=>
 	(retract ?n)
 	(modify ?e (value (make-instance of JSON-NUMBER (value (string-to-field (format nil "%s.%s" ?number ?fraction)))))))
 
-(defrule end-number-exponent
-	(filename ?name)
-	?n <- (number (name ?name) (value ?number ?fraction&~"" ?sign ?exponent))
-	?e <- (element (name ?name) (value ?n))
+(defrule json-end-number-exponent
+	(json-stream (id ?name))
+	?n <- (json-number (name ?name) (value ?number ?fraction&~"" ?sign ?exponent))
+	?e <- (json-element (name ?name) (value ?n))
 	(or
-		(popped-char ?name EOF)
-		(popped-char ?name 9|10|13|32) ; whitespace
+		(json-popped-char ?name EOF)
+		(json-popped-char ?name 9|10|13|32) ; whitespace
 		(and
-			(popped-char ?name 44|93) ; , ]
-			(array (name ?name) (values $? ?e)))
+			(json-popped-char ?name 44|93) ; , ]
+			(json-array (name ?name) (values $? ?e)))
 		(and
-			(popped-char ?name 44|125) ; , }
-			?m <- (member (name ?name) (value ?e))
-			(obj (name ?name) (members $? ?m))))
+			(json-popped-char ?name 44|125) ; , }
+			?m <- (json-member (name ?name) (value ?e))
+			(json-obj (name ?name) (members $? ?m))))
 	=>
 	(retract ?n)
 	(modify ?e (value (make-instance of JSON-NUMBER (value (str-cat ?number "." ?fraction "e" ?sign ?exponent))))))
 
-(defrule end-number-exponent-no-fraction
-	(filename ?name)
-	?n <- (number (name ?name) (value ?number "" ?sign ?exponent))
-	?e <- (element (name ?name) (value ?n))
+(defrule json-end-number-exponent-no-fraction
+	(json-stream (id ?name))
+	?n <- (json-number (name ?name) (value ?number "" ?sign ?exponent))
+	?e <- (json-element (name ?name) (value ?n))
 	(or
-		(popped-char ?name EOF)
-		(popped-char ?name 9|10|13|32) ; whitespace
+		(json-popped-char ?name EOF)
+		(json-popped-char ?name 9|10|13|32) ; whitespace
 		(and
-			(popped-char ?name 44|93) ; , ]
-			(array (name ?name) (values $? ?e)))
+			(json-popped-char ?name 44|93) ; , ]
+			(json-array (name ?name) (values $? ?e)))
 		(and
-			(popped-char ?name 44|125) ; , }
-			?m <- (member (name ?name) (value ?e))
-			(obj (name ?name) (members $? ?m))))
+			(json-popped-char ?name 44|125) ; , }
+			?m <- (json-member (name ?name) (value ?e))
+			(json-obj (name ?name) (members $? ?m))))
 	=>
 	(retract ?n)
 	(modify ?e (value (make-instance of JSON-NUMBER (value (str-cat ?number "e" ?sign ?exponent))))))
 
-(defrule start-false-null-true
-	(filename ?name)
-	?p <- (popped-char ?name ?char&102|110|116) ; f n t
-	?e <- (element (name ?name) (value nil))
-	(not (member (name ?name) (key ?e)))
+(defrule json-start-false-null-true
+	(json-stream (id ?name))
+	?p <- (json-popped-char ?name ?char&102|110|116) ; f n t
+	?e <- (json-element (name ?name) (value nil))
+	(not (json-member (name ?name) (key ?e)))
 	=>
 	(retract ?p)
-	(modify ?e (value (assert (false-null-true (name ?name) (values ?char))))))
+	(modify ?e (value (assert (json-false-null-true (name ?name) (values ?char))))))
 
-(defrule false-find-a
-	(filename ?name)
-	?p <- (popped-char ?name 97) ; a
-	?f <- (false-null-true (name ?name) (values 102))
+(defrule json-false-find-a
+	(json-stream (id ?name))
+	?p <- (json-popped-char ?name 97) ; a
+	?f <- (json-false-null-true (name ?name) (values 102))
 	=>
 	(retract ?p)
 	(modify ?f (values 102 97)))
 
-(defrule false-find-l
-	(filename ?name)
-	?p <- (popped-char ?name 108) ; l
-	?f <- (false-null-true (name ?name) (values 102 97))
+(defrule json-false-find-l
+	(json-stream (id ?name))
+	?p <- (json-popped-char ?name 108) ; l
+	?f <- (json-false-null-true (name ?name) (values 102 97))
 	=>
 	(retract ?p)
 	(modify ?f (values 102 97 108)))
 
-(defrule false-find-s
-	(filename ?name)
-	?p <- (popped-char ?name 115) ; s
-	?f <- (false-null-true (name ?name) (values 102 97 108))
+(defrule json-false-find-s
+	(json-stream (id ?name))
+	?p <- (json-popped-char ?name 115) ; s
+	?f <- (json-false-null-true (name ?name) (values 102 97 108))
 	=>
 	(retract ?p)
 	(modify ?f (values 102 97 108 115)))
 
-(defrule false-find-e
-	(filename ?name)
-	?p <- (popped-char ?name 101) ; e
-	?f <- (false-null-true (name ?name) (values 102 97 108 115))
+(defrule json-false-find-e
+	(json-stream (id ?name))
+	?p <- (json-popped-char ?name 101) ; e
+	?f <- (json-false-null-true (name ?name) (values 102 97 108 115))
 	=>
 	(retract ?p)
 	(modify ?f (values 102 97 108 115 101)))
 
-(defrule end-false
-	(filename ?name)
-	?f <- (false-null-true (name ?name) (values 102 97 108 115 101))
-	?e <- (element (name ?name) (value ?f))
+(defrule json-end-false
+	(json-stream (id ?name))
+	?f <- (json-false-null-true (name ?name) (values 102 97 108 115 101))
+	?e <- (json-element (name ?name) (value ?f))
 	(or
-		(popped-char ?name 9|10|13|32|-1) ; whitespace EOF
+		(json-popped-char ?name 9|10|13|32|-1) ; whitespace EOF
 		(and
-			(popped-char ?name 44|93) ; , ]
-			(array (name ?name) (values $? ?e)))
+			(json-popped-char ?name 44|93) ; , ]
+			(json-array (name ?name) (values $? ?e)))
 		(and
-			(popped-char ?name 44|125) ; , }
-			(member (name ?name) (value ?e)))
+			(json-popped-char ?name 44|125) ; , }
+			(json-member (name ?name) (value ?e)))
 	)
 	=>
 	(retract ?f)
 	(modify ?e (value (make-instance of JSON-FALSE))))
 
-(defrule true-find-r
-	(filename ?name)
-	?p <- (popped-char ?name 114) ; r
-	?f <- (false-null-true (name ?name) (values 116))
+(defrule json-true-find-r
+	(json-stream (id ?name))
+	?p <- (json-popped-char ?name 114) ; r
+	?f <- (json-false-null-true (name ?name) (values 116))
 	=>
 	(retract ?p)
 	(modify ?f (values 116 114)))
 
-(defrule true-find-u
-	(filename ?name)
-	?p <- (popped-char ?name 117) ; u
-	?f <- (false-null-true (name ?name) (values 116 114))
+(defrule json-true-find-u
+	(json-stream (id ?name))
+	?p <- (json-popped-char ?name 117) ; u
+	?f <- (json-false-null-true (name ?name) (values 116 114))
 	=>
 	(retract ?p)
 	(modify ?f (values 116 114 117)))
 
-(defrule true-find-e
-	(filename ?name)
-	?p <- (popped-char ?name 101) ; u
-	?f <- (false-null-true (name ?name) (values 116 114 117))
+(defrule json-true-find-e
+	(json-stream (id ?name))
+	?p <- (json-popped-char ?name 101) ; u
+	?f <- (json-false-null-true (name ?name) (values 116 114 117))
 	=>
 	(retract ?p)
 	(modify ?f (values 116 114 117 101)))
 
-(defrule end-true
-	(filename ?name)
-	?f <- (false-null-true (name ?name) (values 116 114 117 101))
-	?e <- (element (name ?name) (value ?f))
+(defrule json-end-true
+	(json-stream (id ?name))
+	?f <- (json-false-null-true (name ?name) (values 116 114 117 101))
+	?e <- (json-element (name ?name) (value ?f))
 	(or
-		(popped-char ?name 9|10|13|32|-1) ; whitespace EOF
+		(json-popped-char ?name 9|10|13|32|-1) ; whitespace EOF
 		(and
-			(popped-char ?name 44|93) ; , ]
-			(array (name ?name) (values $? ?e)))
+			(json-popped-char ?name 44|93) ; , ]
+			(json-array (name ?name) (values $? ?e)))
 		(and
-			(popped-char ?name 44|125) ; , }
-			(member (name ?name) (value ?e)))
+			(json-popped-char ?name 44|125) ; , }
+			(json-member (name ?name) (value ?e)))
 	)
 	=>
 	(retract ?f)
 	(modify ?e (value (make-instance of JSON-TRUE))))
 
-(defrule null-find-u
-	(filename ?name)
-	?p <- (popped-char ?name 117) ; u
-	?f <- (false-null-true (name ?name) (values 110))
+(defrule json-null-find-u
+	(json-stream (id ?name))
+	?p <- (json-popped-char ?name 117) ; u
+	?f <- (json-false-null-true (name ?name) (values 110))
 	=>
 	(retract ?p)
 	(modify ?f (values 110 117)))
 
-(defrule null-find-l
-	(filename ?name)
-	?p <- (popped-char ?name 108) ; l
-	?f <- (false-null-true (name ?name) (values 110 117))
+(defrule json-null-find-l
+	(json-stream (id ?name))
+	?p <- (json-popped-char ?name 108) ; l
+	?f <- (json-false-null-true (name ?name) (values 110 117))
 	=>
 	(retract ?p)
 	(modify ?f (values 110 117 108)))
 
-(defrule null-find-second-l
-	(filename ?name)
-	?p <- (popped-char ?name 108) ; l
-	?f <- (false-null-true (name ?name) (values 110 117 108))
+(defrule json-null-find-second-l
+	(json-stream (id ?name))
+	?p <- (json-popped-char ?name 108) ; l
+	?f <- (json-false-null-true (name ?name) (values 110 117 108))
 	=>
 	(retract ?p)
 	(modify ?f (values 110 117 108 108)))
 
-(defrule end-null
-	(filename ?name)
-	?f <- (false-null-true (name ?name) (values 110 117 108 108))
-	?e <- (element (name ?name) (value ?f))
+(defrule json-end-null
+	(json-stream (id ?name))
+	?f <- (json-false-null-true (name ?name) (values 110 117 108 108))
+	?e <- (json-element (name ?name) (value ?f))
 	(or
-		(popped-char ?name 9|10|13|32|-1) ; whitespace EOF
+		(json-popped-char ?name 9|10|13|32|-1) ; whitespace EOF
 		(and
-			(popped-char ?name 44|93) ; , ]
-			(array (name ?name) (values $? ?e)))
+			(json-popped-char ?name 44|93) ; , ]
+			(json-array (name ?name) (values $? ?e)))
 		(and
-			(popped-char ?name 44|125) ; , }
-			(member (name ?name) (value ?e)))
+			(json-popped-char ?name 44|125) ; , }
+			(json-member (name ?name) (value ?e)))
 	)
 	=>
 	(retract ?f)
@@ -622,3 +651,37 @@
 		(send ?m pprint ?t)
 		(if (< ?i ?len) then (printout ?t ",") else (printout ?t)))
 	(printout ?t "}"))
+
+;;; the value of the stream is complete when the top element holds an instance
+;;; and no array or member holds that element
+(defrule json-end
+	(declare (salience 10))
+	?e <- (json-element (name ?name) (value ?value&:(instancep ?value)))
+	?s <- (json-stream (id ?name))
+	(not (json-array (name ?name) (values $? ?e $?)))
+	(not (json-member (name ?name) (value ?e)))
+	(not (json-member (name ?name) (key ?e)))
+	?r <- (json-ready (id ?name))
+	=>
+	(retract ?e ?r ?s)
+	(assert (json-done (id ?name) (element ?value))))
+
+(defrule json-end-of-stream
+	"the stream ended before a value began"
+	(declare (salience -10))
+	?c <- (json-popped-char ?name -1)
+	?r <- (json-ready (id ?name))
+	?e <- (json-element (name ?name) (value nil))
+	?s <- (json-stream (id ?name))
+	=>
+	(retract ?c ?r ?e ?s)
+	(assert (json-eof (id ?name))))
+
+(defrule json-drop-char-after-value
+	"a character that came after the value, for example a newline, goes away"
+	(declare (salience -10))
+	?c <- (json-popped-char ?name ?)
+	(json-stream (id ?name))
+	(not (json-element (name ?name)))
+	=>
+	(retract ?c))
