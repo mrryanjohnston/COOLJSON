@@ -69,10 +69,16 @@
 	(retract ?p)
 	(assert (json-stream (id ?name) (stream ?stream)) (json-element (name ?name))))
 
+; the codec reads the next character only while nothing it already read is
+; left to reduce: an element that holds an instance goes into its array,
+; member or the end fact first, and a member that holds an instance goes into
+; its object first.  That keeps one rule at a time on the agenda per stream.
 (defrule json-pop-char
 	(json-ready (id ?name))
 	(json-stream (id ?name) (stream ?stream))
 	(not (json-popped-char ?name ?))
+	(not (json-element (name ?name) (value ?value&:(instancep ?value))))
+	(not (json-member (name ?name) (value ?value&:(instancep ?value))))
 	=>
 	(assert (json-popped-char ?name (get-char ?stream))))
 
@@ -86,13 +92,6 @@
 		(json-member (name ?name) (key ?key&:(instancep ?key)) (value nil)))
 	=>
 	(retract ?p))
-
-(defrule json-init-element-for-empty-array
-	(json-stream (id ?name))
-	?a <- (json-array (name ?name) (values))
-	(not (json-element (name ?name) (value nil)))
-	=>
-	(modify ?a (values (assert (json-element (name ?name))))))
 
 (defrule json-init-element-for-empty-obj
 	(json-stream (id ?name))
@@ -109,7 +108,10 @@
 	(not (json-member (name ?name) (key ?e)))
 	=>
 	(retract ?p)
-	(modify ?e (value (assert (json-array (name ?name))))))
+	(bind ?a (assert (json-array (name ?name))))
+	(modify ?e (value ?a))
+	; the element goes in after ?e holds the array, or it would duplicate ?e
+	(modify ?a (values (assert (json-element (name ?name))))))
 
 (defrule json-array-unwrap-element
 	(json-stream (id ?name))
@@ -294,8 +296,8 @@
 
 (defrule json-illegal-number
 	(json-stream (id ?name))
-	(json-popped-char ?name ?char&~46&~48&~49&~50&~51&~52&~53&~54&~55&~56&~57&~69&~101&~-1) ; . 0-9 E e EOF
-	?n <- (json-number (name ?name))
+	(json-popped-char ?name ?char&~46&~48&~49&~50&~51&~52&~53&~54&~55&~56&~57&~69&~101&~-1&~9&~10&~13&~32) ; . 0-9 E e EOF ws
+	?n <- (json-number (name ?name) (value ?))
 	?e <- (json-element (name ?name) (value ?n))
 	(not (json-member (name ?name) (value ?e)))
 	(not (json-array (name ?name) (values $? ?e)))
@@ -328,7 +330,7 @@
 
 (defrule json-illegal-fraction
 	(json-stream (id ?name))
-	(json-popped-char ?name ?char&~48&~49&~50&~51&~52&~53&~54&~55&~56&~57&~69&~101&~-1) ; 0-9 E e EOF
+	(json-popped-char ?name ?char&~48&~49&~50&~51&~52&~53&~54&~55&~56&~57&~69&~101&~-1&~9&~10&~13&~32) ; 0-9 E e EOF ws
 	?n <- (json-number (name ?name) (value ? ?))
 	?e <- (json-element (name ?name) (value ?n))
 	(not (json-member (name ?name) (value ?e)))
