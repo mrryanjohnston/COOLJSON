@@ -3,6 +3,8 @@
 ;;;   1. only one rule is activated at a time while one example is decoded
 ;;;   2. many examples decode at once, each to the same result as alone
 ;;;   3. the right hand side of a rule holds no (if ...)
+;;;   4. no deffunction called from the right hand side of a rule, directly
+;;;      or through another deffunction, holds an (if ...)
 ;;;
 ;;; Prints one line per violation and a summary, then exits with 1 when it
 ;;; found a violation and 0 when it found none.
@@ -95,12 +97,45 @@
 		             (foreach ?line ?differences (println ?line))))
 		(close ?file)))
 
-;;; 3. the text of the rule from => on holds no (if
-(deffunction lint-rhs (?rule)
+;;; the text of the rule from => on
+(deffunction rhs (?rule)
 	(bind ?text (ppdefrule ?rule nil))
-	(bind ?rhs (sub-string (str-index "=>" ?text) (str-length ?text) ?text))
-	(if (or (str-index "(if " ?rhs) (str-index (format nil "(if%n") ?rhs)) then
+	(sub-string (str-index "=>" ?text) (str-length ?text) ?text))
+
+;;; TRUE when the text of a construct holds an (if
+(deffunction holds-if (?text)
+	(or (str-index "(if " ?text) (str-index (format nil "(if%n") ?text)))
+
+;;; TRUE when the text of a construct calls the function ?name
+(deffunction calls (?text ?name)
+	(or (str-index (str-cat "(" ?name " ") ?text)
+	    (str-index (str-cat "(" ?name ")") ?text)
+	    (str-index (str-cat "(" ?name (format nil "%n")) ?text)))
+
+;;; the deffunctions the text calls, the deffunctions those call, and so on
+(deffunction called-deffunctions (?text)
+	(bind ?found (create$))
+	(bind ?pending (create$ ?text))
+	(while (> (length$ ?pending) 0) do
+		(bind ?text (nth$ 1 ?pending))
+		(bind ?pending (rest$ ?pending))
+		(foreach ?function (get-deffunction-list)
+			(if (and (not (member$ ?function ?found)) (calls ?text ?function)) then
+				(bind ?found (create$ ?found ?function))
+				(bind ?pending (create$ ?pending (ppdeffunction ?function nil))))))
+	?found)
+
+;;; 3. the right hand side holds no (if
+(deffunction lint-rhs (?rule)
+	(if (holds-if (rhs ?rule)) then
 		(violation (format nil "%s: (if in the right hand side" ?rule))))
+
+;;; 4. no deffunction the right hand side calls holds an (if
+(deffunction lint-rhs-deffunctions (?rule)
+	(foreach ?function (called-deffunctions (rhs ?rule))
+		(if (holds-if (ppdeffunction ?function nil)) then
+			(violation (format nil "%s: (if in deffunction %s called from the right hand side"
+			                   ?rule ?function)))))
 
 (deffunction lint ()
 	(bind ?cases (find-cases))
@@ -108,7 +143,9 @@
 	(foreach ?file ?cases
 		(bind ?fired-alone (+ ?fired-alone (lint-one-activation ?file))))
 	(lint-many-at-once ?cases ?fired-alone)
-	(foreach ?rule (get-defrule-list) (lint-rhs ?rule))
+	(foreach ?rule (get-defrule-list)
+		(lint-rhs ?rule)
+		(lint-rhs-deffunctions ?rule))
 	(println (length$ (get-defrule-list)) " rules, " (length$ ?cases) " cases, "
 	         ?*violations* " violations")
 	(if (> ?*violations* 0) then (exit 1) else (exit 0)))

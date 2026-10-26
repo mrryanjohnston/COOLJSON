@@ -132,13 +132,15 @@ file in `tests/cases` one rule at a time and checks:
 2. all the cases decode together in one run, each to the file named the same
    in `tests/expected`, firing as many rules as they fired alone put together
 3. no rule has an `(if` in its right hand side
+4. no deffunction called from a rule's right hand side, directly or through
+   another deffunction, has an `(if`
 
 It prints one line per violation, a summary, and exits with status 1 when
 it found a violation.
 
 ## The start fact and the end fact
 
-Since 15 September 2026 each construct of this codec has the prefix `json-`,
+each construct of this codec has the prefix `json-`,
 and the codec has its own start fact, so it loads next to other codecs in
 one environment. Open the stream and assert the start fact with the logical
 name of the stream and an id for the results, then run:

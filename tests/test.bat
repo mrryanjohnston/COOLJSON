@@ -26,7 +26,8 @@
 		                  (println "FAIL " ?file)
 		                  (foreach ?line ?differences (println ?line)))))
 	(println (length$ ?files) " tests, " (- (length$ ?files) ?failed) " passed, "
-	         ?failed " failed"))
+	         ?failed " failed")
+	(if (> ?failed 0) then (exit 1) else (exit 0)))
 
 (run-tests (create$
 test.json
@@ -55,4 +56,3 @@ test23.json
 test24.json
 test25.json
 ))
-(exit)
