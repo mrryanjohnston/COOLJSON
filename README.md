@@ -118,9 +118,24 @@ CLIPS> (run)
 
 ## Testing
 
-Run the test suit with `make test`. It'll run through the files in `tests/cases`
+Run the test suite with `make test`. It'll run through the files in `tests/cases`
 and make sure that the result of sending `pprint` to the instances
 prints out the contents of the files named the same in `tests/expected`.
+
+Every case decodes once under each of the conflict resolution strategies CLIPS
+offers: `depth`, `breadth`, `lex`, `mea`, `complexity`, `simplicity` and
+`random`. A codec that keeps only one rule on the agenda at a time decodes
+the same way under all of them, so a case that fails under one strategy
+and not another points at a rule set that relies on firing order. All the
+cases decode in one run per strategy, so a strategy like `breadth` advances
+every message a character at a time in lockstep: a rule whose patterns are
+not all tied to the same message then matches facts from two messages at
+once, which decoding one case at a time cannot show. Each failure names the
+strategy it failed under, and the summary counts cases times strategies:
+
+```
+25 cases x 7 strategies = 175 tests, 175 passed, 0 failed
+```
 
 ## Linting
 
