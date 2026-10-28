@@ -21,12 +21,12 @@
 (deffunction check-case (?strategy ?file)
 	(open actual actual "w")
 	(bind ?found FALSE)
-	(do-for-fact ((?d json-done)) (eq ?d:id ?file)
+	(do-for-instance ((?j JSON-TEXT)) (eq ?j:id ?file)
 		(bind ?found TRUE)
-		(send ?d:element pprint actual))
+		(send ?j pprint actual))
 	(close actual)
 	(if (not ?found) then
-		(println "FAIL " ?file " (" ?strategy "): did not find the json-done fact")
+		(println "FAIL " ?file " (" ?strategy "): did not find the JSON-TEXT instance")
 		(return FALSE))
 	(bind ?differences (compare-files (sym-cat expected/ ?file) actual))
 	(if (> (length$ ?differences) 0) then

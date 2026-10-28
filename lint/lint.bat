@@ -84,12 +84,12 @@
 		(violation (format nil "%d rules fired decoding the cases together, %d fired decoding them alone"
 		                   ?fired ?fired-alone)))
 	(foreach ?file ?cases
-		(bind ?done (find-all-facts ((?f json-done)) (eq ?f:id ?file)))
+		(bind ?done (find-all-instances ((?j JSON-TEXT)) (eq ?j:id ?file)))
 		(if (<> (length$ ?done) 1)
-		    then (violation (format nil "%s: found %d json-done facts decoding the cases together"
+		    then (violation (format nil "%s: found %d JSON-TEXT instances decoding the cases together"
 		                            ?file (length$ ?done)))
 		    else (open actual actual "w")
-		         (send (fact-slot-value (nth$ 1 ?done) element) pprint actual)
+		         (send (nth$ 1 ?done) pprint actual)
 		         (close actual)
 		         (bind ?differences (compare-files (sym-cat ../tests/expected/ ?file) actual))
 		         (if (> (length$ ?differences) 0) then

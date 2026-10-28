@@ -13,6 +13,7 @@
 (defclass JSON-FALSE (is-a JSON))
 (defclass JSON-NULL (is-a JSON))
 (defclass JSON-TRUE (is-a JSON))
+(defclass JSON-TEXT (is-a JSON) (slot value))   ; JSON-text = ws value ws; the result of one stream
 (deftemplate json-string
 	(slot name)
 	(slot value))
@@ -54,12 +55,11 @@
 	(slot id)
 	(slot stream))
 
-;;; the end facts: the value, or the end of the stream before any value.
-;;; The program that matches them retracts them.
-(deftemplate json-done
-	(slot id)
-	(slot element))
+;;; the value becomes a JSON-TEXT instance with the id; the program finds it
+;;; with an object pattern or find-instance
 
+;;; the end fact: the stream ended before any value.  The program that
+;;; matches it retracts it.
 (deftemplate json-eof
 	(slot id))
 
@@ -612,6 +612,9 @@
 	(retract ?f)
 	(modify ?e (value (make-instance of JSON-NULL))))
 
+(defmessage-handler JSON-TEXT pprint primary (?t)
+	(send ?self:value pprint ?t))
+
 (defmessage-handler JSON-NUMBER pprint primary (?t)
 	(printout ?t ?self:value))
 
@@ -666,7 +669,7 @@
 	?r <- (json-ready (id ?name))
 	=>
 	(retract ?e ?r ?s)
-	(assert (json-done (id ?name) (element ?value))))
+	(make-instance of JSON-TEXT (id ?name) (value ?value)))
 
 (defrule json-end-of-stream
 	"the stream ended before a value began"

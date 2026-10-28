@@ -25,41 +25,24 @@ $ clips -f2 program.bat
 CLIPS> 
 ```
 
-Type `(facts)` to see the `element` facts which track the `JSON` instances:
+The value of each stream is a `JSON-TEXT` instance with the stream's `id`.
+Its `value` slot holds the top value, and it is the last instance the codec
+makes for the stream, so a rule that matches it sees a complete value. Send
+`pprint` to it, or to any instance below it, to write the JSON:
 
 ```
-CLIPS> (facts)
-f-1     (json-parse (stream test.json) (id test.json))
-f-2     (json-parse (stream test2.json) (id test2.json))
-f-3     (json-parse (stream test3.json) (id test3.json))
-f-4     (json-parse (stream test4.json) (id test4.json))
-f-5     (json-parse (stream test5.json) (id test5.json))
-f-6     (element (name test5.json) (value [gen8]))
-f-77    (popped-char test5.json 10)
-f-78    (element (name test4.json) (value [gen15]))
-f-123   (popped-char test4.json 10)
-f-124   (element (name test3.json) (value [gen16]))
-f-128   (popped-char test3.json 10)
-f-129   (element (name test2.json) (value [gen39]))
-f-278   (popped-char test2.json 10)
-f-279   (element (name test.json) (value [gen51]))
-f-348   (popped-char test.json 10)
-For a total of 15 facts.
-```
-
-Each `element` fact has an instance name set in its `value` slot.
-You may view the parsed JSON by `send`ind the `pprint` message
-to any of the instance names like so:
-
-```
-CLIPS> (send [gen8] pprint t)
-{"\"":"woah\, dude","hot dog":["\u64aa yo"]}
-CLIPS> (send [gen51] pprint t)
-{"asdf":123,"four":[[],6,"jkl",[{}]]}
-CLIPS> (send [gen16] pprint t)
+CLIPS> (do-for-all-instances ((?j JSON-TEXT)) TRUE (println ?j:id) (send ?j pprint t) (println))
+test25.json
+{"space before colon":1,"tab before colon":2,"newline before colon":3,"nested":{"inner key":[4,{"deep":"a b c"}]},"no space":5}
+test24.json
+[1e5,2,3.5,-0.5e+1,"not a number",true,null]
+...
+test3.json
 {}
-CLIPS> (send [gen39] pprint t)
+test2.json
 [{"asdf":123,"four":[[],6,"jkl",[{}]]},789.02,"another",[567,"string",{"yo":1}],"hey"]
+test.json
+{"asdf":123,"four":[[],6,"jkl",[{}]]}
 CLIPS> 
 ```
 
@@ -76,11 +59,7 @@ CLIPS> (run)
 20 mean number of facts (21 maximum).
 52 mean number of instances (54 maximum).
 1 mean number of activations (2 maximum).
-CLIPS> (do-for-fact ((?f element)) (eq ?f:name stdin) (ppfact ?f))
-(element 
-   (name stdin) 
-   (value [gen54]))
-CLIPS> (send [gen54] pprint t)
+CLIPS> (do-for-instance ((?j JSON-TEXT)) (eq ?j:id stdin) (send ?j pprint t))
 ["My custom JSON",987654321.2]CLIPS> 
 ```
 
@@ -153,9 +132,9 @@ file in `tests/cases` one rule at a time and checks:
 It prints one line per violation, a summary, and exits with status 1 when
 it found a violation.
 
-## The start fact and the end fact
+## The start fact and the result
 
-each construct of this codec has the prefix `json-`,
+Each construct of this codec has the prefix `json-`,
 and the codec has its own start fact, so it loads next to other codecs in
 one environment. Open the stream and assert the start fact with the logical
 name of the stream and an id for the results, then run:
@@ -164,9 +143,21 @@ name of the stream and an id for the results, then run:
     (assert (json-parse (stream input) (id input)) (json-ready (id input)))
     (run)
 
-The codec announces each result with `(json-done (id) (element))`, a fact with the `id` and
-the object it made; the program that matches the fact retracts it. Every
-object carries the `id` in its `id` slot, where it carried the
-`filename` before.
+The result is a `JSON-TEXT` instance whose `value` is the top value. Every
+object the codec makes carries the `id` in its `id` slot, and the
+`JSON-TEXT` is the last object it makes, so match it with an object pattern
+or find it with `find-instance`:
+
+    (find-instance ((?j JSON-TEXT)) (eq ?j:id input))
+
+The codec only decodes and encodes. It does not record that a value was
+received, sent or handled; a program that needs that keeps a fact of its
+own, or unmakes the instances it is done with. To send a value, make the
+objects and send `pprint` with the logical name of the stream:
+
+    (send (make-instance of JSON-ARRAY (values
+            (make-instance of JSON-STRING (value "pong"))
+            (make-instance of JSON-NUMBER (value 1)))) pprint t)
+    ; ["pong",1]
 
 A protocol codec reads only while a `json-ready` fact for the id exists, and a complete message consumes it, so a server can poll between messages. A program that reads a file asserts the ready fact again until the codec asserts `json-eof`.
