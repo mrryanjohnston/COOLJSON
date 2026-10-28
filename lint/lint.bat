@@ -5,6 +5,9 @@
 ;;;   3. the right hand side of a rule holds no (if ...)
 ;;;   4. no deffunction called from the right hand side of a rule, directly
 ;;;      or through another deffunction, holds an (if ...)
+;;;   5. the right hand side of a rule holds no (find-fact or (do-for-fact,
+;;;      directly or through a deffunction: a single fact a rule acts on, it
+;;;      matches on the left hand side
 ;;;
 ;;; Prints one line per violation and a summary, then exits with 1 when it
 ;;; found a violation and 0 when it found none.
@@ -16,6 +19,8 @@
 (defglobal ?*violations* = 0)
 ;;; guards against a rule set that never empties its agenda
 (defglobal ?*max-steps* = 100000)
+;;; the functions that look up a single fact instead of matching it
+(defglobal ?*fact-queries* = (create$ find-fact do-for-fact))
 
 (deffunction violation (?message)
 	(bind ?*violations* (+ ?*violations* 1))
@@ -137,6 +142,24 @@
 			(violation (format nil "%s: (if in deffunction %s called from the right hand side"
 			                   ?rule ?function)))))
 
+;;; the first of ?*fact-queries* the text calls, or FALSE
+(deffunction fact-query (?text)
+	(foreach ?query ?*fact-queries*
+		(if (calls ?text ?query) then (return ?query)))
+	FALSE)
+
+;;; 5. neither the right hand side nor a deffunction it calls holds a
+;;; (find-fact or (do-for-fact
+(deffunction lint-rhs-fact-queries (?rule)
+	(bind ?query (fact-query (rhs ?rule)))
+	(if ?query then
+		(violation (format nil "%s: (%s in the right hand side" ?rule ?query)))
+	(foreach ?function (called-deffunctions (rhs ?rule))
+		(bind ?query (fact-query (ppdeffunction ?function nil)))
+		(if ?query then
+			(violation (format nil "%s: (%s in deffunction %s called from the right hand side"
+			                   ?rule ?query ?function)))))
+
 (deffunction lint ()
 	(bind ?cases (find-cases))
 	(bind ?fired-alone 0)
@@ -145,7 +168,8 @@
 	(lint-many-at-once ?cases ?fired-alone)
 	(foreach ?rule (get-defrule-list)
 		(lint-rhs ?rule)
-		(lint-rhs-deffunctions ?rule))
+		(lint-rhs-deffunctions ?rule)
+		(lint-rhs-fact-queries ?rule))
 	(println (length$ (get-defrule-list)) " rules, " (length$ ?cases) " cases, "
 	         ?*violations* " violations")
 	(if (> ?*violations* 0) then (exit 1) else (exit 0)))
