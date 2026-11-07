@@ -1,7 +1,8 @@
 ;;; Lints the rules of the codec against the practices a COOL codec follows:
 ;;;
-;;;   1. only one rule is activated at a time while one example is decoded
-;;;   2. many examples decode at once, each to the same result as alone
+;;;   1. only one rule is activated at a time while one case is decoded
+;;;   2. all the cases decode at once, each to the same result as alone; a
+;;;      case that is read to the end of its stream gives one json-eof fact
 ;;;   3. the right hand side of a rule holds no (if ...)
 ;;;   4. no deffunction called from the right hand side of a rule, directly
 ;;;      or through another deffunction, holds an (if ...)
@@ -26,17 +27,18 @@
 	(bind ?*violations* (+ ?*violations* 1))
 	(println "LINT " ?message))
 
-;;; the cases in tests/cases: test.json, test2.json, test3.json ... up to the
-;;; first number that has no file
-(deffunction find-cases ()
+;;; the cases in tests/cases with one prefix: test.json, test2.json,
+;;; test3.json ... up to the first number that has no file.  A test case
+;;; holds one complete value.  An eof case stops before its value is complete.
+(deffunction find-cases (?prefix)
 	(bind ?cases (create$))
 	(bind ?n 1)
-	(bind ?file test.json)
+	(bind ?file (sym-cat ?prefix .json))
 	(while (open (sym-cat ../tests/cases/ ?file) probe) do
 		(close probe)
 		(bind ?cases (create$ ?cases ?file))
 		(bind ?n (+ ?n 1))
-		(bind ?file (sym-cat test ?n .json)))
+		(bind ?file (sym-cat ?prefix ?n .json)))
 	?cases)
 
 (deffunction start-case (?file)
@@ -77,10 +79,11 @@
 
 ;;; 2. decodes every case in one run, then checks that each one printed
 ;;; what it prints alone and that the run fired as many rules as the cases
-;;; fired alone put together.
-(deffunction lint-many-at-once (?cases ?fired-alone)
+;;; fired alone put together.  An eof case is read to the end of its stream
+;;; and gives one json-eof fact.
+(deffunction lint-many-at-once (?cases ?eof-cases ?fired-alone)
 	(reset)
-	(foreach ?file ?cases (start-case ?file))
+	(foreach ?file (create$ ?cases ?eof-cases) (start-case ?file))
 	(bind ?fired 0)
 	(while (and (> (length$ (activations)) 0) (< ?fired ?*max-steps*)) do
 		(run 1)
@@ -100,6 +103,11 @@
 		         (if (> (length$ ?differences) 0) then
 		             (violation (format nil "%s: decoded differently together with the other cases" ?file))
 		             (foreach ?line ?differences (println ?line))))
+		(close ?file))
+	(foreach ?file ?eof-cases
+		(bind ?ended (length$ (find-all-facts ((?e json-eof)) (eq ?e:id ?file))))
+		(if (<> ?ended 1) then
+			(violation (format nil "%s: found %d json-eof facts decoding the cases together" ?file ?ended)))
 		(close ?file)))
 
 ;;; the text of the rule from => on
@@ -161,16 +169,17 @@
 			                   ?rule ?query ?function)))))
 
 (deffunction lint ()
-	(bind ?cases (find-cases))
+	(bind ?cases (find-cases test))
+	(bind ?eof-cases (find-cases eof))
 	(bind ?fired-alone 0)
-	(foreach ?file ?cases
+	(foreach ?file (create$ ?cases ?eof-cases)
 		(bind ?fired-alone (+ ?fired-alone (lint-one-activation ?file))))
-	(lint-many-at-once ?cases ?fired-alone)
+	(lint-many-at-once ?cases ?eof-cases ?fired-alone)
 	(foreach ?rule (get-defrule-list)
 		(lint-rhs ?rule)
 		(lint-rhs-deffunctions ?rule)
 		(lint-rhs-fact-queries ?rule))
-	(println (length$ (get-defrule-list)) " rules, " (length$ ?cases) " cases, "
+	(println (length$ (get-defrule-list)) " rules, " (+ (length$ ?cases) (length$ ?eof-cases)) " cases, "
 	         ?*violations* " violations")
 	(if (> ?*violations* 0) then (exit 1) else (exit 0)))
 

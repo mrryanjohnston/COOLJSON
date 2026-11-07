@@ -58,8 +58,8 @@
 ;;; the value becomes a JSON-TEXT instance with the id; the program finds it
 ;;; with an object pattern or find-instance
 
-;;; the end fact: the stream ended before any value.  The program that
-;;; matches it retracts it.
+;;; the end fact: the stream stopped before a value was complete.  The codec
+;;; changes no other fact.  The program that matches the fact retracts it.
 (deftemplate json-eof
 	(slot id))
 
@@ -75,6 +75,7 @@
 ; its object first.  That keeps one rule at a time on the agenda per stream.
 (defrule json-pop-char
 	(json-ready (id ?name))
+	(not (json-eof (id ?name)))
 	(json-stream (id ?name) (stream ?stream))
 	(not (json-popped-char ?name ?))
 	(not (json-element (name ?name) (value ?value&:(instancep ?value))))
@@ -209,7 +210,7 @@
 
 (defrule json-continue-string
 	(json-stream (id ?name))
-	?p <- (json-popped-char ?name ?char&~34&~92) ; " \
+	?p <- (json-popped-char ?name ?char&~34&~92&~-1) ; " \ EOF
 	?s <- (json-string (name ?name) (value ?str))
 	(not (json-escape ?name))
 	=>
@@ -249,7 +250,7 @@
 
 (defrule json-end-string-escape
 	(json-stream (id ?name))
-	?p <- (json-popped-char ?name ?char&~117) ; u
+	?p <- (json-popped-char ?name ?char&~117&~-1) ; u EOF
 	?s <- (json-string (name ?name) (value ?str))
 	?e <- (json-escape ?name)
 	(not (json-hexadecimal ?name $?))
@@ -405,7 +406,7 @@
 	?n <- (json-number (name ?name) (value ?number))
 	?e <- (json-element (name ?name) (value ?n))
 	(or
-		(json-popped-char ?name EOF)
+		(json-popped-char ?name -1) ; EOF
 		(json-popped-char ?name 9|10|13|32) ; whitespace
 		(and
 			(json-popped-char ?name 44|93) ; , ]
@@ -423,7 +424,7 @@
 	?n <- (json-number (name ?name) (value ?number ?fraction))
 	?e <- (json-element (name ?name) (value ?n))
 	(or
-		(json-popped-char ?name EOF)
+		(json-popped-char ?name -1) ; EOF
 		(json-popped-char ?name 9|10|13|32) ; whitespace
 		(and
 			(json-popped-char ?name 44|93) ; , ]
@@ -441,7 +442,7 @@
 	?n <- (json-number (name ?name) (value ?number ?fraction&~"" ?sign ?exponent))
 	?e <- (json-element (name ?name) (value ?n))
 	(or
-		(json-popped-char ?name EOF)
+		(json-popped-char ?name -1) ; EOF
 		(json-popped-char ?name 9|10|13|32) ; whitespace
 		(and
 			(json-popped-char ?name 44|93) ; , ]
@@ -459,7 +460,7 @@
 	?n <- (json-number (name ?name) (value ?number "" ?sign ?exponent))
 	?e <- (json-element (name ?name) (value ?n))
 	(or
-		(json-popped-char ?name EOF)
+		(json-popped-char ?name -1) ; EOF
 		(json-popped-char ?name 9|10|13|32) ; whitespace
 		(and
 			(json-popped-char ?name 44|93) ; , ]
@@ -671,15 +672,23 @@
 	(retract ?e ?r ?s)
 	(make-instance of JSON-TEXT (id ?name) (value ?value)))
 
+;;; the end of the stream: get-char gave -1 and no rule can use it.  A
+;;; complete number, false, null or true at the end of the stream reduces
+;;; before this rule matches, and json-end makes the JSON-TEXT.  The codec
+;;; asserts json-eof and changes no other fact: the parts of a value that is
+;;; not complete stay as they are, and the program decides what occurs then.
 (defrule json-end-of-stream
-	"the stream ended before a value began"
-	(declare (salience -10))
+	"the stream stopped before a value was complete"
 	?c <- (json-popped-char ?name -1)
 	?r <- (json-ready (id ?name))
-	?e <- (json-element (name ?name) (value nil))
-	?s <- (json-stream (id ?name))
+	(not (json-element (name ?name) (value ?value&:(instancep ?value))))
+	(not (json-member (name ?name) (value ?value&:(instancep ?value))))
+	(not (json-number (name ?name) (value $?parts&:(<> 3 (length$ ?parts))))) ; a number can stop, but not at the start of its exponent
+	(not (json-false-null-true (name ?name) (values 102 97 108 115 101))) ; false
+	(not (json-false-null-true (name ?name) (values 110 117 108 108))) ; null
+	(not (json-false-null-true (name ?name) (values 116 114 117 101))) ; true
 	=>
-	(retract ?c ?r ?e ?s)
+	(retract ?c ?r)
 	(assert (json-eof (id ?name))))
 
 (defrule json-drop-char-after-value

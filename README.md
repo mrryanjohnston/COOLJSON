@@ -100,6 +100,9 @@ CLIPS> (run)
 Run the test suite with `make test`. It'll run through the files in `tests/cases`
 and make sure that the result of sending `pprint` to the instances
 prints out the contents of the files named the same in `tests/expected`.
+An `eof*.json` case stops before its value is complete. For this case the
+codec must assert `json-eof`, make no `JSON-TEXT` and keep its `json-stream`
+fact.
 
 Every case decodes once under each of the conflict resolution strategies CLIPS
 offers: `depth`, `breadth`, `lex`, `mea`, `complexity`, `simplicity` and
@@ -113,7 +116,7 @@ once, which decoding one case at a time cannot show. Each failure names the
 strategy it failed under, and the summary counts cases times strategies:
 
 ```
-25 cases x 7 strategies = 175 tests, 175 passed, 0 failed
+46 cases x 7 strategies = 322 tests, 322 passed, 0 failed
 ```
 
 ## Linting
@@ -124,10 +127,14 @@ file in `tests/cases` one rule at a time and checks:
 
 1. only one rule is on the agenda at a time while one case is decoded
 2. all the cases decode together in one run, each to the file named the same
-   in `tests/expected`, firing as many rules as they fired alone put together
+   in `tests/expected`, firing as many rules as they fired alone put together;
+   a case that is read to the end of its stream gives one `json-eof` fact
 3. no rule has an `(if` in its right hand side
 4. no deffunction called from a rule's right hand side, directly or through
    another deffunction, has an `(if`
+5. no rule has a `(find-fact` or `(do-for-fact` in its right hand side,
+   directly or through a deffunction: a single fact a rule acts on, it
+   matches in its left hand side
 
 It prints one line per violation, a summary, and exits with status 1 when
 it found a violation.
@@ -161,3 +168,18 @@ objects and send `pprint` with the logical name of the stream:
     ; ["pong",1]
 
 A protocol codec reads only while a `json-ready` fact for the id exists, and a complete message consumes it, so a server can poll between messages. A program that reads a file asserts the ready fact again until the codec asserts `json-eof`.
+
+The codec asserts `json-eof` with the id if the stream stops before a value
+is complete. This occurs if no value started, or if the stream stops in a
+string, an array, an object, a number, `false`, `null` or `true`. A number,
+`false`, `null` or `true` as the top value is complete when the stream
+stops. The result is a `JSON-TEXT`. The codec changes no other fact when it
+asserts `json-eof`: the facts and the instances of the part that it read
+stay, and the `json-stream` fact stays. What occurs then is the decision of
+the program. The program must retract `json-eof`:
+
+    (defrule input-ended
+      ?e <- (json-eof (id input))
+      =>
+      (retract ?e)
+      (close input))
